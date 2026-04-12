@@ -61,7 +61,7 @@
               <el-icon><Fold /></el-icon>
             </el-button>
             <el-icon :size="28" color="#667eea"><ChatDotRound /></el-icon>
-            <h2>AI 智能助手</h2>
+            <h2>AI维修 智能助手</h2>
           </div>
           <div class="header-actions">
             <el-button text @click="handleClearChat">
@@ -77,8 +77,8 @@
               <div class="logo-animation">
                 <el-icon :size="80" color="#667eea"><ChatDotRound /></el-icon>
               </div>
-              <h3>你好！我是 AI 助手</h3>
-              <p>我可以帮你解答问题、编写代码、提供建议</p>
+              <h3>你好！我是 维修AI 助手</h3>
+              <p>我可以帮你解答查维修资料,维修过程新增领料单等功能</p>
               <div class="suggestion-chips">
                 <div
                   v-for="suggestion in suggestions"
@@ -199,9 +199,8 @@ const md = new MarkdownIt({
 
 const suggestions = [
   '你能做什么',
-  '帮我写一个 Vue 组件',
-  '解释一下什么是闭包',
-  '如何优化性能'
+  '帮我查资料',
+  '我需要领XXX料',
 ]
 
 const renderMarkdown = (content) => {
