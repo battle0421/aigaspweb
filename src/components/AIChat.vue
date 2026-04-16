@@ -329,7 +329,7 @@ const loadConversationsFromStorage = () => {
     createNewConversation()
   }
 }
-
+// ... existing code ...
 const handleSendMessage = async () => {
   if (!inputMessage.value.trim() || isLoading.value) return
 
@@ -352,64 +352,152 @@ const handleSendMessage = async () => {
   await scrollToBottom()
   isLoading.value = true
 
+  const aiMessage = {
+    role: 'ai',
+    content: '',
+    timestamp: Date.now()
+  }
+  messages.value.push(aiMessage)
+
+  const aiMessageIndex = messages.value.length - 1
+  console.log('AI消息索引:', aiMessageIndex, '当前消息数量:', messages.value.length)
+  console.log('AI消息对象:', messages.value[aiMessageIndex])
+
   try {
-    const response = await axios.post('http://localhost:8080/AI-Qwen/api/chat/send', {
-      memoryId: memoryId.value,
-      message: currentInput
-    }, {
+    console.log('开始请求流式接口...')
+    const response = await fetch('http://localhost:8080/AI-Qwen/api/chat/send/stream', {
+      method: 'POST',
       headers: {
         'Content-Type': 'application/json'
-      }
+      },
+      body: JSON.stringify({
+        memoryId: memoryId.value,
+        message: currentInput
+      })
     })
 
-    console.log('后端响应:', response.data)
+    console.log('响应状态:', response.status)
+    console.log('响应头 Content-Type:', response.headers.get('content-type'))
+    console.log('响应体是否存在:', response.body !== null)
 
-    let aiContent = ''
-
-    if (response.data && response.data.code === '200') {
-      aiContent = response.data.data || response.data.message || '抱歉，我没有理解你的问题。'
-    } else if (response.data && response.data.data) {
-      aiContent = response.data.data
-    } else {
-      aiContent = response.data?.message || '抱歉，服务器返回了未知格式的响应。'
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
     }
 
-    messages.value.push({
-      role: 'ai',
-      content: aiContent,
-      timestamp: Date.now()
-    })
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder('utf-8')
+    let buffer = ''
+    let isDone = false
+    let currentEvent = ''
+    let currentData = ''
+    let chunkCount = 0
+    let totalChars = 0
 
+    console.log('开始读取流式数据...')
+
+    while (!isDone) {
+      console.log('等待读取数据块...')
+      const { done, value } = await reader.read()
+
+      console.log('读取结果 - done:', done, 'value长度:', value?.length || 0)
+
+      if (done) {
+        console.log('✅ 读取完成，总共接收', chunkCount, '个数据块')
+        break
+      }
+
+      chunkCount++
+      const text = decoder.decode(value, { stream: true })
+      console.log(`📦 第${chunkCount}个数据块原始内容:`, JSON.stringify(text))
+      console.log(`📦 第${chunkCount}个数据块解码后:`, text)
+
+      buffer += text
+
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+
+      console.log('解析到', lines.length, '行，剩余buffer:', JSON.stringify(buffer))
+
+      for (const line of lines) {
+        const trimmedLine = line.trim()
+        console.log('处理行:', JSON.stringify(trimmedLine))
+
+        if (trimmedLine.startsWith('event:')) {
+          currentEvent = trimmedLine.substring(6).trim()
+          console.log('🏷️ 事件类型:', currentEvent)
+        } else if (trimmedLine.startsWith('data:')) {
+          currentData = trimmedLine.substring(5).trim()
+          console.log('📝 数据内容:', currentData, '事件:', currentEvent)
+
+          if (currentEvent === 'message') {
+            if (messages.value[aiMessageIndex]) {
+              messages.value[aiMessageIndex].content += currentData
+              totalChars += currentData.length
+
+              if (totalChars <= 10 || totalChars % 10 === 0) {
+                console.log(`✨ 已接收${totalChars}个字符，内容:`, messages.value[aiMessageIndex].content)
+              }
+
+              await scrollToBottom()
+            } else {
+              console.error('❌ AI消息对象不存在！索引:', aiMessageIndex, '数组长度:', messages.value.length)
+            }
+          } else if (currentEvent === 'done') {
+            console.log('✅ 收到完成信号，总字符数:', totalChars)
+            isDone = true
+            break
+          } else if (currentEvent === 'error') {
+            console.error('❌ 收到错误:', currentData)
+            if (messages.value[aiMessageIndex]) {
+              messages.value[aiMessageIndex].content = `错误: ${currentData}`
+            }
+            isDone = true
+            break
+          }
+
+          currentEvent = ''
+          currentData = ''
+        } else if (trimmedLine === '') {
+          currentEvent = ''
+          currentData = ''
+        }
+      }
+    }
+
+    console.log('🏁 最终内容长度:', messages.value[aiMessageIndex]?.content?.length || 0)
+    console.log('🏁 最终内容:', messages.value[aiMessageIndex]?.content)
     updateCurrentConversation()
     await scrollToBottom()
   } catch (error) {
-    console.error('Error:', error)
+    console.error('❌ Error:', error)
     let errorMessage = '抱歉，出现了一些问题。请稍后重试。'
 
-    if (error.response) {
-      const errorData = error.response.data
-      if (errorData && errorData.message) {
-        errorMessage = `服务器错误: ${errorData.message}`
-      } else {
-        errorMessage = `服务器错误: ${error.response.status}`
-      }
-    } else if (error.request) {
+    if (error.message.includes('Failed to fetch')) {
       errorMessage = '无法连接到服务器，请检查后端服务是否启动。\n\n确保后端服务运行在 http://localhost:8080'
     } else {
       errorMessage = `请求失败: ${error.message}`
     }
 
-    messages.value.push({
-      role: 'ai',
-      content: errorMessage,
-      timestamp: Date.now()
-    })
+    if (messages.value[aiMessageIndex]) {
+      messages.value[aiMessageIndex].content = errorMessage
+    } else {
+      messages.value.push({
+        role: 'ai',
+        content: errorMessage,
+        timestamp: Date.now()
+      })
+    }
 
     updateCurrentConversation()
   } finally {
     isLoading.value = false
   }
 }
+
+
+
+// ... existing code ...
+
 
 const handleSuggestionClick = (suggestion) => {
   inputMessage.value = suggestion
