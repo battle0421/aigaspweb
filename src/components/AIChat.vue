@@ -93,9 +93,9 @@
           </div>
 
           <div
-            v-for="(message, index) in messages"
-            :key="index"
-            :class="['message-item', message.role]"
+              v-for="(message, index) in messages"
+              :key="index"
+              :class="['message-item', message.role]"
           >
             <div class="message-avatar">
               <el-icon v-if="message.role === 'user'" :size="24"><User /></el-icon>
@@ -107,12 +107,17 @@
                 <span class="message-time">{{ formatTime(message.timestamp) }}</span>
               </div>
               <div class="message-bubble">
-                <div class="message-text" v-html="renderMarkdown(message.content)"></div>
+                <div v-if="message.content" class="message-text" v-html="renderMarkdown(message.content)"></div>
+                <div v-else-if="isLoading && index === messages.length - 1 && message.role === 'ai'" class="typing-indicator">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </div>
               </div>
             </div>
           </div>
 
-          <div v-if="isLoading" class="message-item ai">
+          <div v-if="false" class="message-item ai">
             <div class="message-avatar">
               <el-icon :size="24" color="#fff"><ChatDotRound /></el-icon>
             </div>
